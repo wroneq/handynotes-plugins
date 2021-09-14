@@ -21,9 +21,9 @@ def install(src, dst):
     if 'WSL_DISTRO_NAME' in os.environ:
         # os.symlink() does not create links that work from the Windows side.
         # Use mklink to create a windows-compatible symlink from inside WSL.
-        #   1 - Use to parent dir of "dst" as CWD to this cmd.exe warning:
+        #   1 - Use the parent dir of "dst" as CWD to avoid this warning:
         #       UNC paths are not supported.  Defaulting to Windows directory.
-        #   2 - Ensure the src is outside of WSL or Battle.net client bugs
+        #   2 - Ensure the src is outside of WSL or Battle.net client will bug
         src = path.realpath(src)
         if not src.startswith('/mnt/'):
             raise RuntimeError('Project files must not live inside WSL!')
@@ -68,6 +68,9 @@ def main():
         os.makedirs(target_dir, exist_ok=True)
         for item in os.listdir(plugin_dir):
             install(path.join(plugin_dir, item), path.join(target_dir, item))
+
+        # add dummy .git directory so the plugins show up as "Working Copy" in the curse client
+        os.makedirs(path.join(target_dir, '.git'), exist_ok=True)
 
         # link core + library dirs
         for item in ('core', 'libs', 'embeds.xml'):

@@ -5,18 +5,16 @@
 * Sub-tooltips on hover to inspect items, spells and rewards
 * Add checkmark to completed nodes
 * Add list of map items to quest log panel (new tab?)
-* Add support for explicit focus/glow groups
 * Fix transmog collected state on initial load.
+* Investigate auto NPC coloring for tooltips (red, green, yellow).
+* Fix POI arrow to shorten line slightly.
 
 # Shadowlands
 
-* Filter covenant-specific rewards
-
-### Optional
-
-* [Ardenweald Gourmand](https://www.wowhead.com/achievement=14774/ardenweald-gourmand)
-* [Fractured Faerie Tales](https://www.wowhead.com/achievement=14788/fractured-faerie-tales)
-* [It's Always Sinny in Revendreth](https://www.wowhead.com/achievement=14276/its-always-sinny-in-revendreth)
+* Add Beast Warrens mount to Hunt vignette.
+* [Crypt Couture](https://www.wowhead.com/achievement=14763/crypt-couture) (Necrolord only?)
+* [To All the Squirrels I've Loved and Lost](https://www.wowhead.com/achievement=14731/to-all-the-squirrels-ive-loved-and-lost)
+* [Wild Hunting](https://www.wowhead.com/achievement=14779)
 
 # Legion
 

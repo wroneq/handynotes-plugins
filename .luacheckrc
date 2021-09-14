@@ -4,13 +4,16 @@ redefined = false
 unused_args = false
 
 read_globals = {
-    -- WoW helper functions
+    -- LUA / helper functions
+    'date',
     'FormatPercentage',
     'floor',
     'format',
     'hooksecurefunc',
     'sqrt',
     'strsub',
+    'strsplit',
+    'time',
     'wipe',
 
     -- WoW API functions
@@ -19,6 +22,7 @@ read_globals = {
     'C_Covenants',
     'C_CurrencyInfo',
     'C_Garrison',
+    'C_Item',
     'C_Map',
     'C_MapExplorationInfo',
     'C_Minimap',
@@ -27,12 +31,13 @@ read_globals = {
     'C_PvP',
     'C_QuestLine',
     'C_QuestLog',
+    'C_Spell',
     'C_SuperTrack',
     'C_TaskQuest',
     'C_Timer',
     'C_TransmogCollection',
+    'C_VignetteInfo',
     'CombatLogGetCurrentEventInfo',
-    'EJ_GetInstanceInfo',
     'EJ_GetTierInfo',
     'GetAchievementCriteriaInfo',
     'GetAchievementCriteriaInfoByID',
@@ -42,12 +47,16 @@ read_globals = {
     'GetContainerItemID',
     'GetContainerItemInfo',
     'GetContainerNumSlots',
+    'GetCurrentRegion',
     'GetCVar',
+    'GetFactionInfoByID',
     'GetItemInfo',
     'GetItemSpecInfo',
+    'GetLocale',
     'GetPlayerFacing',
     'GetQuestObjectiveInfo',
     'GetSpellInfo',
+    'GetText',
     'GetTime',
     'IsAddOnLoaded',
     'IsLeftAltKeyDown',
@@ -106,7 +115,10 @@ read_globals = {
 
 globals = {
     'HandyNotes.OnDisable',
-    'HandyNotes.OnEnable'
+    'HandyNotes.OnEnable',
+    'SLASH_MOUNTID1',
+    'SLASH_PETID1',
+    'SlashCmdList'
 }
 
 files["tests/test_class.lua"] = {
@@ -117,7 +129,7 @@ files["tests/test_class.lua"] = {
 files["tests/test_locales.lua"] = {
     globals = {
         'TestLocales',
-        'EJ_GetInstanceInfo',
+        'GetCurrentRegion',
         'UnitFactionGroup',
         'format',
     }

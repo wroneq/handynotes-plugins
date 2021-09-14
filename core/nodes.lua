@@ -1,7 +1,6 @@
 -------------------------------------------------------------------------------
 ---------------------------------- NAMESPACE ----------------------------------
 -------------------------------------------------------------------------------
-
 local ADDON_NAME, ns = ...
 local L = ns.locale
 local Class = ns.Class
@@ -20,6 +19,7 @@ Base class for all displayed nodes.
     label (string): Tooltip title for this node
     sublabel (string): Oneline string to display under label
     group (Group): Options group for this node (display, scale, alpha)
+    fgroup (string): A category of nodes that should be focused together
     icon (string|number): The icon texture to display
     alpha (float): The default alpha value for this type
     scale (float): The default scale value for this type
@@ -38,15 +38,13 @@ local Node = Class('Node', nil, {
     minimap = true,
     alpha = 1,
     scale = 1,
-    icon = "default",
+    icon = 'default',
     group = ns.groups.MISC
 })
 
 function Node:Initialize(attrs)
     -- assign all attributes
-    if attrs then
-        for k, v in pairs(attrs) do self[k] = v end
-    end
+    if attrs then for k, v in pairs(attrs) do self[k] = v end end
 
     -- normalize table values
     self.quest = ns.AsTable(self.quest)
@@ -56,7 +54,7 @@ function Node:Initialize(attrs)
 
     -- ensure proper group is assigned
     if not IsInstance(self.group, Group) then
-        error('group attribute must be a Group class instance: '..self.group)
+        error('group attribute must be a Group class instance: ' .. self.group)
     end
 end
 
@@ -65,10 +63,16 @@ Return the associated texture, scale and alpha value to pass to HandyNotes
 for this node.
 --]]
 
-function Node:GetDisplayInfo()
+function Node:GetDisplayInfo(mapID, minimap)
     local icon = ns.GetIconPath(self.icon)
-    local scale = self.scale * self.group:GetScale()
-    local alpha = self.alpha * self.group:GetAlpha()
+    local scale = self.scale * self.group:GetScale(mapID)
+    local alpha = self.alpha * self.group:GetAlpha(mapID)
+
+    if not minimap and WorldMapFrame.isMaximized and
+        ns:GetOpt('maximized_enlarged') then
+        scale = scale * 1.3 -- enlarge on maximized world map
+    end
+
     return icon, scale, alpha
 end
 
@@ -77,18 +81,17 @@ Return the glow POI for this node. If the node is hovered or focused, a green
 glow is applyed to help highlight the node.
 --]]
 
-function Node:GetGlow()
-    if self._glow and (self._focus or self._hover) then
-        local _, scale, alpha = self:GetDisplayInfo()
-        self._glow.alpha = alpha
-        self._glow.scale = scale
+function Node:GetGlow(mapID, minimap)
+    if self.glow and (self._focus or self._hover) then
+        local _, scale, alpha = self:GetDisplayInfo(mapID, minimap)
+        self.glow.alpha = alpha
+        self.glow.scale = scale
         if self._focus then
-            self._glow.r, self._glow.g, self._glow.b = 0, 1, 0
+            self.glow.r, self.glow.g, self.glow.b = 0, 1, 0
         else
-            self._glow.r, self._glow.g, self._glow.b = 1, 1, 0
-            self._glow.a = 0.5
+            self.glow.r, self.glow.g, self.glow.b = 1, 1, 0
         end
-        return self._glow
+        return self.glow
     end
 end
 
@@ -99,7 +102,8 @@ associated rewards have been obtained (achievements, toys, pets, mounts).
 
 function Node:IsCollected()
     for reward in self:IterateRewards() do
-        if not reward:IsObtained() then return false end
+        if reward:IsEnabled() and reward:IsObtainable() and
+            not reward:IsObtained() then return false end
     end
     return true
 end
@@ -119,12 +123,16 @@ function Node:IsCompleted()
     if self.quest and self.questAny then
         -- Completed if *any* attached quest ids are true
         for i, quest in ipairs(self.quest) do
-            if C_QuestLog.IsQuestFlaggedCompleted(quest) then return true end
+            if C_QuestLog.IsQuestFlaggedCompleted(quest) then
+                return true
+            end
         end
     elseif self.quest then
         -- Completed only if *all* attached quest ids are true
         for i, quest in ipairs(self.quest) do
-            if not C_QuestLog.IsQuestFlaggedCompleted(quest) then return false end
+            if not C_QuestLog.IsQuestFlaggedCompleted(quest) then
+                return false
+            end
         end
         return true
     end
@@ -153,7 +161,7 @@ Iterate over rewards that are enabled for this character.
 
 function Node:IterateRewards()
     local index, reward = 0
-    return function ()
+    return function()
         if not (self.rewards and #self.rewards) then return end
         repeat
             index = index + 1
@@ -174,7 +182,9 @@ function Node:PrerequisiteCompleted()
     -- Prerequisite not met if any dependent quest ids are false
     if not self.questDeps then return true end
     for i, quest in ipairs(self.questDeps) do
-        if not C_QuestLog.IsQuestFlaggedCompleted(quest) then return false end
+        if not C_QuestLog.IsQuestFlaggedCompleted(quest) then
+            return false
+        end
     end
     return true
 end
@@ -188,14 +198,14 @@ world map containing this node is opened.
 function Node:Prepare()
     -- verify chosen icon exists
     if type(self.icon) == 'string' and ns.icons[self.icon] == nil then
-        error('unknown icon: '..self.icon)
+        error('unknown icon: ' .. self.icon)
     end
 
     -- initialize glow POI (if glow icon available)
-    local glow = ns.GetGlowPath(self.icon)
-    if glow then
-        local Glow = self.GlowClass or ns.poi.Glow
-        self._glow = Glow({ icon=glow })
+
+    if not self.glow then
+        local icon = ns.GetGlowPath(self.icon)
+        if icon then self.glow = ns.poi.Glow({icon = icon}) end
     end
 
     ns.PrepareLinks(self.label)
@@ -211,6 +221,10 @@ function Node:Prepare()
             end
         end
     end
+
+    if self.rewards then
+        for i, reward in ipairs(self.rewards) do reward:Prepare() end
+    end
 end
 
 --[[
@@ -219,7 +233,7 @@ on the attributes set on this specific node, such as setting an `rlabel` or
 `sublabel` value.
 --]]
 
-function Node:Render(tooltip)
+function Node:Render(tooltip, focusable)
     -- render the label text with NPC names resolved
     tooltip:SetText(ns.RenderLinks(self.label, true))
 
@@ -235,22 +249,24 @@ function Node:Render(tooltip)
             end
         end
         color = (count == #self.quest) and ns.status.Green or ns.status.Gray
-        rlabel = rlabel..' '..color(tostring(count)..'/'..#self.quest)
+        rlabel = rlabel .. ' ' .. color(tostring(count) .. '/' .. #self.quest)
     end
 
     if self.faction then
-        rlabel = rlabel..' '..ns.GetIconLink(self.faction:lower(), 16, 1, -1)
+        rlabel = rlabel .. ' ' ..
+                     ns.GetIconLink(self.faction:lower(), 16, 1, -1)
     end
 
-    if self.pois then
+    if focusable then
         -- add an rlabel hint to use left-mouse to focus the node
-        local focus = ns.GetIconLink('left_mouse', 12)..ns.status.Gray(L["focus"])
-        rlabel = (#rlabel > 0) and focus..' '..rlabel or focus
+        local focus = ns.GetIconLink('left_mouse', 12) ..
+                          ns.status.Gray(L['focus'])
+        rlabel = (#rlabel > 0) and focus .. ' ' .. rlabel or focus
     end
 
     -- render top-right label text
     if #rlabel > 0 then
-        local rtext = _G[tooltip:GetName()..'TextRight1']
+        local rtext = _G[tooltip:GetName() .. 'TextRight1']
         rtext:SetTextColor(1, 1, 1)
         rtext:SetText(rlabel)
         rtext:Show()
@@ -266,9 +282,9 @@ function Node:Render(tooltip)
         for i, req in ipairs(self.requires) do
             if IsInstance(req, Requirement) then
                 color = req:IsMet() and ns.color.White or ns.color.Red
-                text = color(L["Requires"]..' '..req:GetText())
+                text = color(L['Requires'] .. ' ' .. req:GetText())
             else
-                text = ns.color.Red(L["Requires"]..' '..req)
+                text = ns.color.Red(L['Requires'] .. ' ' .. req)
             end
             tooltip:AddLine(ns.RenderLinks(text, true))
         end
@@ -277,7 +293,7 @@ function Node:Render(tooltip)
     -- additional text for the node to describe how to interact with the
     -- object or summon the rare
     if self.note and ns:GetOpt('show_notes') then
-        if self.requires or self.sublabel then tooltip:AddLine(" ") end
+        if self.requires or self.sublabel then tooltip:AddLine(' ') end
         tooltip:AddLine(ns.RenderLinks(self.note), 1, 1, 1, true)
     end
 
@@ -291,10 +307,10 @@ function Node:Render(tooltip)
             local isAchieve = IsInstance(reward, ns.reward.Achievement)
             local isSpacer = IsInstance(reward, ns.reward.Spacer)
             if isAchieve and firstAchieve then
-                tooltip:AddLine(" ")
+                tooltip:AddLine(' ')
                 firstAchieve = false
             elseif not (isAchieve or isSpacer) and firstOther then
-                tooltip:AddLine(" ")
+                tooltip:AddLine(' ')
                 firstOther = false
             end
 
@@ -310,11 +326,12 @@ end
 local Collectible = Class('Collectible', Node)
 
 function Collectible.getters:label()
-    if self.id then return ("{npc:%d}"):format(self.id) end
-    if self.item then return ("{item:%d}"):format(self.item) end
+    if self.id then return ('{npc:%d}'):format(self.id) end
+    if self.item then return ('{item:%d}'):format(self.item) end
     for reward in self:IterateRewards() do
         if IsInstance(reward, ns.reward.Achievement) then
-            return GetAchievementCriteriaInfoByID(reward.id, reward.criteria[1].id) or UNKNOWN
+            return GetAchievementCriteriaInfoByID(reward.id,
+                reward.criteria[1].id) or UNKNOWN
         end
     end
     return UNKNOWN
@@ -361,9 +378,7 @@ function NPC:Initialize(attrs)
     if not self.id then error('id required for NPC nodes') end
 end
 
-function NPC.getters:label()
-    return ("{npc:%d}"):format(self.id)
-end
+function NPC.getters:label() return ('{npc:%d}'):format(self.id) end
 
 -------------------------------------------------------------------------------
 ---------------------------------- PETBATTLE ----------------------------------
@@ -379,19 +394,15 @@ local PetBattle = Class('PetBattle', NPC, {
 ------------------------------------ QUEST ------------------------------------
 -------------------------------------------------------------------------------
 
-local Quest = Class('Quest', Node, {
-    note = AVAILABLE_QUEST,
-    group = ns.groups.QUEST
-})
+local Quest = Class('Quest', Node,
+    {note = AVAILABLE_QUEST, group = ns.groups.QUEST})
 
 function Quest:Initialize(attrs)
     Node.Initialize(self, attrs)
     C_QuestLog.GetTitleForQuestID(self.quest[1]) -- fetch info from server
 end
 
-function Quest.getters:icon()
-    return self.daily and 'quest_ab' or 'quest_ay'
-end
+function Quest.getters:icon() return self.daily and 'quest_ab' or 'quest_ay' end
 
 function Quest.getters:label()
     return C_QuestLog.GetTitleForQuestID(self.quest[1]) or UNKNOWN
@@ -401,30 +412,26 @@ end
 ------------------------------------ RARE -------------------------------------
 -------------------------------------------------------------------------------
 
-local Rare = Class('Rare', NPC, {
-    scale = 1.2,
-    group = ns.groups.RARE
-})
+local Rare = Class('Rare', NPC, {scale = 1.2, group = ns.groups.RARE})
 
-function Rare.getters:icon()
-    return self:IsCollected() and 'skull_w' or 'skull_b'
-end
+function Rare.getters:icon() return
+    self:IsCollected() and 'skull_w' or 'skull_b' end
 
 function Rare:IsEnabled()
     if ns:GetOpt('hide_done_rares') and self:IsCollected() then return false end
     return NPC.IsEnabled(self)
 end
 
-function Rare:GetGlow()
-    local glow = NPC.GetGlow(self)
+function Rare:GetGlow(mapID, minimap)
+    local glow = NPC.GetGlow(self, mapID, minimap)
     if glow then return glow end
 
     if _G['HandyNotes_ZarPluginsDevelopment'] and not self.quest then
-        local _, scale, alpha = self:GetDisplayInfo()
-        self._glow.alpha = alpha
-        self._glow.scale = scale
-        self._glow.r, self._glow.g, self._glow.b = 1, 0, 0
-        return self._glow
+        local _, scale, alpha = self:GetDisplayInfo(mapID, minimap)
+        self.glow.alpha = alpha
+        self.glow.scale = scale
+        self.glow.r, self.glow.g, self.glow.b = 1, 0, 0
+        return self.glow
     end
 end
 
@@ -441,34 +448,35 @@ local Treasure = Class('Treasure', Node, {
 function Treasure.getters:label()
     for reward in self:IterateRewards() do
         if IsInstance(reward, ns.reward.Achievement) then
-            return GetAchievementCriteriaInfoByID(reward.id, reward.criteria[1].id) or UNKNOWN
+            return GetAchievementCriteriaInfoByID(reward.id,
+                reward.criteria[1].id) or UNKNOWN
         end
     end
     return UNKNOWN
 end
 
-function Treasure:GetGlow()
-    local glow = Node.GetGlow(self)
+function Treasure:GetGlow(mapID, minimap)
+    local glow = Node.GetGlow(self, mapID, minimap)
     if glow then return glow end
 
     if _G['HandyNotes_ZarPluginsDevelopment'] and not self.quest then
-        local _, scale, alpha = self:GetDisplayInfo()
-        self._glow.alpha = alpha
-        self._glow.scale = scale
-        self._glow.r, self._glow.g, self._glow.b = 1, 0, 0
-        return self._glow
+        local _, scale, alpha = self:GetDisplayInfo(mapID, minimap)
+        self.glow.alpha = alpha
+        self.glow.scale = scale
+        self.glow.r, self.glow.g, self.glow.b = 1, 0, 0
+        return self.glow
     end
 end
 
 -------------------------------------------------------------------------------
 
 ns.node = {
-    Node=Node,
-    Collectible=Collectible,
-    Intro=Intro,
-    NPC=NPC,
-    PetBattle=PetBattle,
-    Quest=Quest,
-    Rare=Rare,
-    Treasure=Treasure
+    Node = Node,
+    Collectible = Collectible,
+    Intro = Intro,
+    NPC = NPC,
+    PetBattle = PetBattle,
+    Quest = Quest,
+    Rare = Rare,
+    Treasure = Treasure
 }

@@ -1,57 +1,62 @@
 -------------------------------------------------------------------------------
 --------------------------------- LOAD MODULE ---------------------------------
 -------------------------------------------------------------------------------
-
-local lfs = require('lfs')
 local luaunit = require('luaunit')
 
 -------------------------------------------------------------------------------
 
-function EJ_GetInstanceInfo() return 'DUNGEON' end
+function GetCurrentRegion() return 1 end
 function UnitFactionGroup() return 'Horde' end
 format = string.format -- doesn't support %1$s syntax!
 
 local ColorModule, err = loadfile('../core/colors.lua')
-if err then print(err); os.exit() end
+if err then
+    print(err);
+    os.exit()
+end
 
 -------------------------------------------------------------------------------
 ------------------------------- HELPER FUNCTIONS ------------------------------
 -------------------------------------------------------------------------------
 
-local function LocaleDirs()
-    local first, dir = true
-    local iter, dir_obj = lfs.dir('../plugins')
-    return function ()
-        -- always start with core localizations
-        if first then
-            first = false
-            return 'Core', '../core/localization'
-        end
-        repeat
-            dir = iter(dir_obj)
-        until dir == nil or string.find(dir, '%d%d_%a')
-        if dir then
-            return dir:sub(4), ('../plugins/%s/localization'):format(dir)
-        end
+local function Locales()
+    local cmd =
+        'find ../core/localization ../plugins/*/localization -name "*.lua"'
+    local iter = io.popen(cmd):lines()
+    return function()
+        local file = iter()
+        if not file then return end
+        local plugin = file:find('/core/') and 'Core' or
+                           file:sub(file:find('%d%d_%a+')):sub(4)
+        return plugin, file:sub(-8, -5), file:sub(0, -10)
     end
 end
 
-local function Locales()
-    local iterDirs = LocaleDirs()
-    local plugin, dir = iterDirs()
-    local iterFiles, dir_obj = lfs.dir(dir)
-    local file
-    return function ()
-        repeat
-            file = iterFiles(dir_obj)
-            if file == nil then
-                plugin, dir = iterDirs()
-                if plugin ~= nil then
-                    iterFiles, dir_obj = lfs.dir(dir)
-                end
-            end
-        until (file == nil and plugin == nil) or (file and file:find('%a+.lua'))
-        if file then return plugin, file:sub(1, 4), dir end
+local function Code()
+    local cmd = 'find ../core ../plugins -name "*.lua" | grep -v localization'
+    return io.popen(cmd):lines()
+end
+
+-------------------------------------------------------------------------------
+------------------------- SCAN CODE FOR LOCALE STRINGS ------------------------
+-------------------------------------------------------------------------------
+
+-- Localization strings used in the code. Temporarily used strings should be
+-- placed here so that the test does not fail.
+local USED_STRINGS = {
+    activation_unknown = true,
+    requirement_not_found = true,
+    daily = true -- remove me once used
+}
+
+for file in Code() do
+    local code = io.open(file):read('*a')
+    for key in string.gmatch(code, 'L%[["\']([%w_]+)["\']%]') do
+        USED_STRINGS[key] = true
+    end
+    for group in string.gmatch(code, 'Group%(["\']([%w_]+)["\']') do
+        USED_STRINGS[('options_icons_%s'):format(group)] = true
+        USED_STRINGS[('options_icons_%s_desc'):format(group)] = true
     end
 end
 
@@ -62,7 +67,7 @@ end
 TestLocales = {}
 
 function TestLocales:CreateNamespace(expectedKeys)
-    local ns = { keys = {}, seen = {}, expectedKeys = expectedKeys }
+    local ns = {keys = {}, seen = {}, expectedKeys = expectedKeys}
     ColorModule('TEST', ns)
 
     function ns.NewLocale(locale)
@@ -75,10 +80,14 @@ function TestLocales:CreateNamespace(expectedKeys)
                 if ns.seen[key] then
                     error(format('string "%s" assigned twice', key))
                 end
+                if not USED_STRINGS[key] then
+                    error(format('string "%s" is never used in the code', key))
+                end
                 ns.seen[key] = true
                 ns.keys[#ns.keys + 1] = key
                 if expectedKeys and key ~= expectedKeys[#ns.keys] then
-                    error(format('expected "%s" instead of "%s"', expectedKeys[#ns.keys], key))
+                    error(format('expected "%s" instead of "%s"',
+                        expectedKeys[#ns.keys], key))
                 end
             end
         })
@@ -92,20 +101,28 @@ function TestLocales:LoadLocale(locale, dir, expectedKeys)
     local file = ('%s/%s.lua'):format(dir, locale)
     local namespace = self:CreateNamespace(expectedKeys)
     local module, err = loadfile(file)
-    if err then print(err); os.exit() end
+    if err then
+        print(err);
+        os.exit()
+    end
     module('TEST', namespace)
     return namespace
 end
 
 function TestLocales:LocalTestFactory(locale, dir)
-    return function ()
+    return function()
         if locale == 'enUS' then
             -- Just attempt to load the file, nothing else to do
             self:LoadLocale(locale, dir)
         else
             -- Compare the locale to the declared keys in enUS
             local enUS = self:LoadLocale('enUS', dir)
-            self:LoadLocale(locale, dir, enUS.keys)
+            local rrCC = self:LoadLocale(locale, dir, enUS.keys)
+
+            if #rrCC.keys < #enUS.keys then
+                error(format('missing %d strings at eof',
+                    #enUS.keys - #rrCC.keys))
+            end
         end
     end
 end

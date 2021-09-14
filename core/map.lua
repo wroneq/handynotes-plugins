@@ -1,12 +1,11 @@
 -------------------------------------------------------------------------------
 ---------------------------------- NAMESPACE ----------------------------------
 -------------------------------------------------------------------------------
-
 local ADDON_NAME, ns = ...
 local Class = ns.Class
 
-local HBD = LibStub("HereBeDragons-2.0")
-local HBDPins = LibStub("HereBeDragons-Pins-2.0")
+local HBD = LibStub('HereBeDragons-2.0')
+local HBDPins = LibStub('HereBeDragons-Pins-2.0')
 
 -------------------------------------------------------------------------------
 ------------------------------------- MAP -------------------------------------
@@ -23,34 +22,40 @@ Base class for all maps.
 
 --]]
 
-local Map = Class('Map', nil, {
-    id = 0,
-    intro = nil,
-    phased = true,
-    settings = false
-})
+local Map = Class('Map', nil,
+    {id = 0, intro = nil, phased = true, settings = false})
 
 function Map:Initialize(attrs)
     for k, v in pairs(attrs) do self[k] = v end
 
     self.nodes = {}
     self.groups = {}
+    self.fgroups = {}
     self.settings = self.settings or false
 
     setmetatable(self.nodes, {
-        __newindex = function (nodes, coord, node)
+        __newindex = function(nodes, coord, node)
             self:AddNode(coord, node)
         end
     })
 
     -- auto-register this map
-    if ns.maps[self.id] then error('Map already registered: '..self.id) end
+    if ns.maps[self.id] then error('Map already registered: ' .. self.id) end
     ns.maps[self.id] = self
 end
 
 function Map:AddNode(coord, node)
     if not ns.IsInstance(node, ns.node.Node) then
-        error(format('All nodes must be instances of the Node() class: %d %s', coord, tostring(node)))
+        error(format('All nodes must be instances of the Node() class: %d %s',
+            coord, tostring(node)))
+    end
+
+    if node.fgroup then
+        if not self.fgroups[node.fgroup] then
+            self.fgroups[node.fgroup] = {}
+        end
+        local fgroup = self.fgroups[node.fgroup]
+        fgroup[#fgroup + 1] = coord
     end
 
     if node.group ~= ns.groups.QUEST then
@@ -72,16 +77,78 @@ function Map:AddNode(coord, node)
         -- Calculate world coordinates for the node
         local x, y = HandyNotes:getXY(coord)
         local wx, wy = HBD:GetWorldCoordinatesFromZone(x, y, self.id)
+        if not (wx and wy) then
+            error(
+                format('Missing world coords: (%d: %d) => ???', self.id, coord))
+        end
         for i, parent in ipairs(node.parent) do
             -- Calculate parent zone coordinates and add node
             local px, py = HBD:GetZoneCoordinatesFromWorld(wx, wy, parent.id)
             if not (px and py) then
-                error(format('No parent coords for node: %d %s %d', coord, tostring(node), parent.id))
+                error(format('Missing map coords: (%d: %d) => (%d: ???)',
+                    self.id, coord, parent.id))
             end
-            local map = ns.maps[parent.id] or Map({id=parent.id})
-            map.nodes[HandyNotes:getCoord(px, py)] = ns.Clone(node, {pois=(parent.pois or false)})
+            local map = ns.maps[parent.id] or Map({id = parent.id})
+            map.nodes[HandyNotes:getCoord(px, py)] = ns.Clone(node, {
+                pois = (parent.pois or false)
+            })
         end
     end
+end
+
+function Map:HasEnabledGroups()
+    for i, group in ipairs(self.groups) do
+        if group:IsEnabled() then return true end
+    end
+    return false
+end
+
+function Map:CanFocus(node)
+    if node.focusable then return true end
+    if type(node.pois) == 'table' then return true end
+    if node.fgroup then
+        for i, coord in ipairs(self.fgroups[node.fgroup]) do
+            if type(self.nodes[coord].pois) == 'table' then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function Map:CanDisplay(node, coord, minimap)
+    -- Check if the zone is still phased
+    if node ~= self.intro and not self.phased then return false end
+
+    -- Minimap may be disabled for this node
+    if not node.minimap and minimap then return false end
+
+    -- Node may be faction restricted
+    if node.faction and node.faction ~= ns.faction then return false end
+
+    return true
+end
+
+function Map:IsNodeEnabled(node, coord, minimap)
+    local db = ns.addon.db
+
+    -- Check for dev force enable
+    if ns:GetOpt('force_nodes') or ns.dev_force then return true end
+
+    -- Check if we've been hidden by the user
+    if db.char[self.id .. '_coord_' .. coord] then return false end
+
+    -- Check if the node is disabled in the current context
+    if not self:CanDisplay(node, coord, minimap) then return false end
+
+    -- Check if node's group is disabled
+    if not node.group:IsEnabled() then return false end
+
+    -- Check for prerequisites and quest (or custom) completion
+    if not node:IsEnabled() then return false end
+
+    -- Display the node based off the group display setting
+    return node.group:GetDisplay(self.id)
 end
 
 function Map:Prepare()
@@ -94,62 +161,42 @@ function Map:Prepare()
     end
 end
 
-function Map:IsNodeEnabled(node, coord, minimap)
-    local db = ns.addon.db
-
-    -- Check for dev force enable
-    if ns:GetOpt('force_nodes') or ns.dev_force then return true end
-
-    -- Check if the zone is still phased
-    if node ~= self.intro and not self.phased then return false end
-
-    -- Check if we've been hidden by the user
-    if db.char[self.id..'_coord_'..coord] then return false end
-
-    -- Minimap may be disabled for this node
-    if not node.minimap and minimap then return false end
-
-    -- Node may be faction restricted
-    if node.faction and node.faction ~= ns.faction then return false end
-
-    -- Check if node's group is disabled
-    if not node.group:IsEnabled() then return false end
-
-    -- Check for prerequisites and quest (or custom) completion
-    if not node:IsEnabled() then return false end
-
-    -- Display the node based off the group display setting
-    return node.group:GetDisplay()
-end
-
-function Map:HasEnabledGroups()
-    for i, group in ipairs(self.groups) do
-        if group:IsEnabled() then return true end
+function Map:SetFocus(node, state, hover)
+    local attr = hover and '_hover' or '_focus'
+    if node.fgroup then
+        for i, coord in ipairs(self.fgroups[node.fgroup]) do
+            self.nodes[coord][attr] = state
+        end
+    else
+        node[attr] = state
     end
-    return false
 end
 
 -------------------------------------------------------------------------------
 ---------------------------- MINIMAP DATA PROVIDER ----------------------------
 -------------------------------------------------------------------------------
 
-local MinimapPinsKey = ADDON_NAME.."MinimapPins"
-local MinimapDataProvider = CreateFrame("Frame", ADDON_NAME.."MinimapDP")
-local MinimapPinTemplate = ADDON_NAME..'MinimapPinTemplate'
+local MinimapPinsKey = ADDON_NAME .. 'MinimapPins'
+local MinimapDataProvider = CreateFrame('Frame', ADDON_NAME .. 'MinimapDP')
+local MinimapPinTemplate = ADDON_NAME .. 'MinimapPinTemplate'
 local MinimapPinMixin = {}
 
-_G[ADDON_NAME..'MinimapPinMixin'] = MinimapPinMixin
+_G[ADDON_NAME .. 'MinimapPinMixin'] = MinimapPinMixin
 
 MinimapDataProvider.facing = GetPlayerFacing()
 MinimapDataProvider.pins = {}
 MinimapDataProvider.pool = {}
 MinimapDataProvider.minimap = true
+MinimapDataProvider.updateTimer = 0
 
 function MinimapDataProvider:ReleaseAllPins()
     for i, pin in ipairs(self.pins) do
-        self.pool[pin] = true
-        pin:OnReleased()
-        pin:Hide()
+        if pin.acquired then
+            self.pool[pin] = true
+            pin.acquired = false
+            pin:OnReleased()
+            pin:Hide()
+        end
     end
 end
 
@@ -158,12 +205,14 @@ function MinimapDataProvider:AcquirePin(template, ...)
     if pin then
         self.pool[pin] = nil -- remove it from the pool
     else
-        pin = CreateFrame("Button", ADDON_NAME.."Pin"..(#self.pins + 1), Minimap, template)
+        pin = CreateFrame('Button', ADDON_NAME .. 'Pin' .. (#self.pins + 1),
+            Minimap, template)
         pin.provider = self
         pin:OnLoad()
         pin:Hide()
         self.pins[#self.pins + 1] = pin
     end
+    pin.acquired = true
     pin:OnAcquired(...)
 end
 
@@ -180,7 +229,7 @@ function MinimapDataProvider:RefreshAllData()
     for coord, node in pairs(map.nodes) do
         if node._prepared and map:IsNodeEnabled(node, coord, true) then
             -- If this icon has a glow enabled, render it
-            local glow = node:GetGlow()
+            local glow = node:GetGlow(map.id, true)
             if glow then
                 glow[1] = coord -- update POI coord for this placement
                 glow:Render(self, MinimapPinTemplate)
@@ -189,20 +238,27 @@ function MinimapDataProvider:RefreshAllData()
             -- Render any POIs this icon has registered
             if node.pois and (node._focus or node._hover) then
                 for i, poi in ipairs(node.pois) do
-                    poi:Render(self, MinimapPinTemplate)
+                    if poi:IsEnabled() then
+                        poi:Render(self, MinimapPinTemplate)
+                    end
                 end
             end
         end
     end
 end
 
+function MinimapDataProvider:RefreshAllRotations()
+    for i, pin in ipairs(self.pins) do
+        if pin.acquired then pin:UpdateRotation() end
+    end
+end
+
 function MinimapDataProvider:OnUpdate()
     local facing = GetPlayerFacing()
-    if facing ~= self.facing then
-        if GetCVar('rotateMinimap') == '1' then
-            self:RefreshAllData()
-        end
+    if facing and facing ~= self.facing then
         self.facing = facing
+        self:RefreshAllRotations()
+        self.updateTimer = 0
     end
 end
 
@@ -215,9 +271,7 @@ end
 function MinimapPinMixin:OnAcquired(poi, ...)
     local mapID = HBD:GetPlayerZone()
     local x, y = poi:Draw(self, ...)
-    if GetCVar('rotateMinimap') == '1' then
-        self.texture:SetRotation(self.texture:GetRotation() + math.pi*2 - self.provider.facing)
-    end
+    if GetCVar('rotateMinimap') == '1' then self:UpdateRotation() end
     HBDPins:AddMinimapIconMap(MinimapPinsKey, self, mapID, x, y, true)
 end
 
@@ -228,18 +282,22 @@ function MinimapPinMixin:OnReleased()
     end
 end
 
-MinimapDataProvider:SetScript('OnUpdate', function ()
-    MinimapDataProvider:OnUpdate()
+function MinimapPinMixin:UpdateRotation()
+    -- If the pin has a rotation, its original value will be stored in the
+    -- `rotation` attribute. Update to accommodate player facing.
+    if self.rotation == nil or self.provider.facing == nil then return end
+    self.texture:SetRotation(self.rotation + math.pi * 2 - self.provider.facing)
+end
+
+MinimapDataProvider:SetScript('OnUpdate', function()
+    if GetCVar('rotateMinimap') == '1' then MinimapDataProvider:OnUpdate() end
 end)
 
-ns.addon:RegisterEvent('MINIMAP_UPDATE_ZOOM', function (...)
-    MinimapDataProvider:RefreshAllData()
-end)
+ns.addon:RegisterEvent('MINIMAP_UPDATE_ZOOM',
+    function(...) MinimapDataProvider:RefreshAllData() end)
 
-ns.addon:RegisterEvent('CVAR_UPDATE', function (_, varname)
-    if varname == 'ROTATE_MINIMAP' then
-        MinimapDataProvider:RefreshAllData()
-    end
+ns.addon:RegisterEvent('CVAR_UPDATE', function(_, varname)
+    if varname == 'ROTATE_MINIMAP' then MinimapDataProvider:RefreshAllData() end
 end)
 
 -------------------------------------------------------------------------------
@@ -247,10 +305,10 @@ end)
 -------------------------------------------------------------------------------
 
 local WorldMapDataProvider = CreateFromMixins(MapCanvasDataProviderMixin)
-local WorldMapPinTemplate = ADDON_NAME..'WorldMapPinTemplate'
+local WorldMapPinTemplate = ADDON_NAME .. 'WorldMapPinTemplate'
 local WorldMapPinMixin = CreateFromMixins(MapCanvasPinMixin)
 
-_G[ADDON_NAME..'WorldMapPinMixin'] = WorldMapPinMixin
+_G[ADDON_NAME .. 'WorldMapPinMixin'] = WorldMapPinMixin
 
 function WorldMapDataProvider:RemoveAllData()
     if self:GetMap() then
@@ -268,7 +326,7 @@ function WorldMapDataProvider:RefreshAllData(fromOnShow)
     for coord, node in pairs(map.nodes) do
         if node._prepared and map:IsNodeEnabled(node, coord, false) then
             -- If this icon has a glow enabled, render it
-            local glow = node:GetGlow()
+            local glow = node:GetGlow(map.id, false)
             if glow then
                 glow[1] = coord -- update POI coord for this placement
                 glow:Render(self:GetMap(), WorldMapPinTemplate)
@@ -277,7 +335,9 @@ function WorldMapDataProvider:RefreshAllData(fromOnShow)
             -- Render any POIs this icon has registered
             if node.pois and (node._focus or node._hover) then
                 for i, poi in ipairs(node.pois) do
-                    poi:Render(self:GetMap(), WorldMapPinTemplate)
+                    if poi:IsEnabled() then
+                        poi:Render(self:GetMap(), WorldMapPinTemplate)
+                    end
                 end
             end
         end
@@ -287,7 +347,7 @@ end
 function WorldMapPinMixin:OnLoad()
     -- The MAP_HIGHLIGHT frame level is well below the level standard
     -- HandyNotes pins use, preventing mouseover conflicts
-    self:UseFrameLevelType("PIN_FRAME_LEVEL_MAP_HIGHLIGHT")
+    self:UseFrameLevelType('PIN_FRAME_LEVEL_MAP_HIGHLIGHT')
 end
 
 function WorldMapPinMixin:OnAcquired(poi, ...)
