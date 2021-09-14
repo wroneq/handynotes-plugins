@@ -694,7 +694,7 @@ local ToAlltheSquirrels = Class('ToAlltheSquirrels', Collectible, {
 
 map.nodes[40205880] = ToAlltheSquirrels({
     id = 131017,
-    note=L['squirrels_note'],
+    note = L['squirrels_note'],
     rewards = {Achievement({id = 14730, criteria = 50244})},
     pois = {
         POI({42607180, 37206480, 36605180})
@@ -705,7 +705,7 @@ map.nodes[49906630] = ToAlltheSquirrels({
     id = 130217,
     note = L['squirrels_note'],
     rewards = {Achievement({id = 14730, criteria = 50245})},
-    pois={
+    pois = {
         POI({47806760, 44006370, 44005450})
     }
 }) -- Nazmani Weevil

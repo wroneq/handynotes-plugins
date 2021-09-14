@@ -832,7 +832,7 @@ map.nodes[60802340] = ToAlltheSquirrels({
     id = 128798,
     note = L['squirrels_note'],
     rewards = {Achievement({id=14730, criteria = 50241})},
-    pois={
+    pois = {
         POI({60801600, 62602380, 59202340})
     }
 }) -- Bramble Hare
