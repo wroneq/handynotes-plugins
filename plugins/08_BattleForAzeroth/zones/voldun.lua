@@ -739,18 +739,17 @@ map.nodes[43006900] = Collectible({
 -------------------------------------------------------------------------------
 ------------------- TO ALL THE SQUIRRELS I SET SAIL TO SEE --------------------
 -------------------------------------------------------------------------------
+
 local ToAlltheSquirrels = Class('ToAlltheSquirrels', Collectible, {
-    icon=237182,
-    group=ns.groups.SQUIRRELS
+    icon = 237182,
+    group = ns.groups.SQUIRRELS
 })
 
 map.nodes[52758373] = ToAlltheSquirrels({
-    id=134700,
-    note=L["squirrels_note"],
-    rewards={
-        Achievement({id=14730, criteria=50247})
-    },
-    pois={
+    id = 134700,
+    note = L['squirrels_note'],
+    rewards = {Achievement({id = 14730, criteria = 50247})},
+    pois = {
         POI({52108640, 50008680})
     }
 }) -- Vale Flutterby

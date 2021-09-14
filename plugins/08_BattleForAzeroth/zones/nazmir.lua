@@ -686,28 +686,25 @@ map.nodes[73634868] = Collectible({
 -------------------------------------------------------------------------------
 ------------------- TO ALL THE SQUIRRELS I SET SAIL TO SEE --------------------
 -------------------------------------------------------------------------------
+
 local ToAlltheSquirrels = Class('ToAlltheSquirrels', Collectible, {
-    icon=237182,
-    group=ns.groups.SQUIRRELS
+    icon = 237182,
+    group = ns.groups.SQUIRRELS
 })
 
 map.nodes[40205880] = ToAlltheSquirrels({
-    id=131017,
-    note=L["squirrels_note"],
-    rewards={
-        Achievement({id=14730, criteria=50244})
-    },
-    pois={
+    id = 131017,
+    note=L['squirrels_note'],
+    rewards = {Achievement({id = 14730, criteria = 50244})},
+    pois = {
         POI({42607180, 37206480, 36605180})
     }
 }) -- Bloodfever Tarantula
 
 map.nodes[49906630] = ToAlltheSquirrels({
-    id=130217,
-    note=L["squirrels_note"],
-    rewards={
-        Achievement({id=14730, criteria=50245})
-    },
+    id = 130217,
+    note = L['squirrels_note'],
+    rewards = {Achievement({id = 14730, criteria = 50245})},
     pois={
         POI({47806760, 44006370, 44005450})
     }
